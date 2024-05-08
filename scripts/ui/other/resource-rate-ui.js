@@ -5,8 +5,7 @@ let diffs = {};
 const historyTimeSpan = 1; // Time in seconds over which to check changes
 
 let contentTable;
-let coreItemsCell; // for v6
-let coreItemsCollapser; // for v7
+let coreItemsCollapser;
 let oldCoreItemsTable;
 
 let isReplaced = false;
@@ -16,14 +15,8 @@ Events.on(ClientLoadEvent, () => {
     contentTable = new Table(Styles.black6);
     contentTable.pack();
 
-    if (Version.number < 7) {
-        const coreInfoTable = Vars.ui.hudGroup.find("coreitems");
-        oldCoreItemsTable = coreInfoTable.getChildren().get(0);
-        coreItemsCell = coreInfoTable.getCell(oldCoreItemsTable);
-    } else {
-        coreItemsCollapser = Vars.ui.hudGroup.find('coreinfo').getChildren().get(1).getChildren().get(0);
-        oldCoreItemsTable = coreItemsCollapser.getChildren().get(0);
-    }
+    coreItemsCollapser = Vars.ui.hudGroup.find('coreinfo').getChildren().get(1).getChildren().get(0);
+    oldCoreItemsTable = coreItemsCollapser.getChildren().get(0);
 
     // Reset diffs when client loads to avoid data persisting between sessions
     diffs = {};
