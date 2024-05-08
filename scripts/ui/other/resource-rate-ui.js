@@ -1,7 +1,8 @@
-const Difference = require("extended-ui/utils/difference");
 const formattingUtil = require("extended-ui/utils/formatting");
+const powerUI = require("extended-ui/ui/other/power-ui");
 
-const diffs = {};
+let diffs = {};
+const historyTimeSpan = 1; // Time in seconds over which to check changes
 
 let contentTable;
 let coreItemsCell; // for v6
@@ -9,6 +10,7 @@ let coreItemsCollapser; // for v7
 let oldCoreItemsTable;
 
 let isReplaced = false;
+let booted = false;
 
 Events.on(ClientLoadEvent, () => {
     contentTable = new Table(Styles.black6);
@@ -22,7 +24,16 @@ Events.on(ClientLoadEvent, () => {
         coreItemsCollapser = Vars.ui.hudGroup.find('coreinfo').getChildren().get(1).getChildren().get(0);
         oldCoreItemsTable = coreItemsCollapser.getChildren().get(0);
     }
-    Timer.schedule(update, 0, 3);
+
+    // Reset diffs when client loads to avoid data persisting between sessions
+    diffs = {};
+
+    Timer.schedule(update, 0, 3); // Check for UI replacement every 3 seconds
+});
+
+Events.on(WorldLoadEvent, () => {
+    // Reset diffs when a new world is loaded to ensure clean data
+    diffs = {};
 });
 
 Events.run(Trigger.update, () => {
@@ -32,22 +43,18 @@ Events.run(Trigger.update, () => {
 
 function update() {
     if (Core.settings.getBool("eui-ShowResourceRate", false)) {
-        if (!isReplaced) {
+        if (!isReplaced || !booted) {
+            const resourceTable = powerUI.createTableWithBarFrom(contentTable);
             isReplaced = true;
-            if (Version.number < 7) {
-                coreItemsCell.setElement(contentTable);
-            } else {
-                coreItemsCollapser.setTable(contentTable);
-            }
+            booted = true;
+            coreItemsCollapser.setTable(resourceTable);
         }
     } else {
-        if (isReplaced) {
+        if (isReplaced || !booted) {
+            const resourceTable = powerUI.createTableWithBarFrom(oldCoreItemsTable);
             isReplaced = false;
-            if (Version.number < 7) {
-                coreItemsCell.setElement(oldCoreItemsTable);
-            } else {
-                coreItemsCollapser.setTable(oldCoreItemsTable);
-            }
+            booted = true;
+            coreItemsCollapser.setTable(resourceTable);
         }
     }
 }
@@ -61,29 +68,49 @@ function buildTable() {
     const resourcesTable = contentTable.table().get();
     const currentItems = Vars.player.team().items();
     let i = 0;
-    currentItems.each((item,amount) => {
-        let diff = diffs[item]
-        if (!diff) {
-            diff = new Difference(1000, amount);
-            diffs[item] = diff;
+    currentItems.each((item, amount) => {
+        if (!diffs[item]) {
+            diffs[item] = { lastAmount: amount, lastTimestamp: Time.millis(), displayValue: 0 };
         }
-        const difference = diff.difference(amount);
-        const color = difference >= 0 ? '[green]' : '[red]';
-        const sign = difference >= 0 ? '+' : '';
 
-        resourcesTable.image(item.icon(Cicon.small)).left();
+        let diff = diffs[item];
+        let currentTime = Time.millis();
+
+        // Calculate and update the display value only once per time span
+        if (currentTime - diff.lastTimestamp >= 1000 * historyTimeSpan) {
+            let delta = amount - diff.lastAmount;
+            diff.displayValue = delta;
+            diff.lastAmount = amount; // Update lastAmount to the current amount
+            diff.lastTimestamp = currentTime; // Update the timestamp
+        }
+
+        const difference = diff.displayValue;
+        let color = difference >= 0 ? '[green]' : '[red]';
+
+        if (difference == 0) {
+            color = '[white]'
+        }
+        const sign = difference >= 0 ? '+' : '-';
+
+        resourcesTable.image(item.uiIcon).left();
+        resourcesTable.label(() => formattingUtil.numberToString(amount)).padLeft(2).left().padRight(1);
         resourcesTable.label(() => {
-            return formattingUtil.numberToString(amount);
-        }).padLeft(2).left().padRight(1);
-        resourcesTable.label(() => {
-            return "(" + color + sign + formattingUtil.numberToString(Math.round(difference)) + "[white])";
+            return "(" + color + sign + padNumber(Math.abs(difference)) + "[white])";
         }).left().padRight(2);
 
-        if(++i % 4 == 0) {
+        if (++i % 4 == 0) {
             resourcesTable.row();
         }
     });
     contentTable.row();
+}
+
+function padNumber(num) {
+    let numStr = Math.abs(num).toString();
+    while (numStr.length < 2) {
+        numStr = '0' + numStr;
+    }
+    return numStr;
 }
 
 function clearTable() {
